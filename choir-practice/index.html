@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0b0e13">
+  <title>Choir Practice</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Choir Practice</h1>
+    <span class="privacy" title="Audio is decoded and analysed in this browser tab. Nothing is uploaded.">🔒 Files never leave this device</span>
+  </header>
+
+  <main>
+    <!-- Source: which file, which part -->
+    <section class="card setup">
+      <div class="row">
+        <label class="btn primary file-btn">
+          <input type="file" id="fileInput" accept="audio/*,.mp3" hidden>
+          Choose part track…
+        </label>
+        <span id="fileName" class="muted grow">No file yet. You can also drop an MP3 anywhere.</span>
+      </div>
+
+      <div class="row">
+        <span class="label">Part</span>
+        <div class="segmented" id="partPicker" role="radiogroup" aria-label="Voice part">
+          <button type="button" role="radio" data-part="S" title="Soprano">S</button>
+          <button type="button" role="radio" data-part="A" title="Alto">A</button>
+          <button type="button" role="radio" data-part="T" title="Tenor">T</button>
+          <button type="button" role="radio" data-part="B" title="Bass">B</button>
+        </div>
+        <span id="partInfo" class="muted"></span>
+      </div>
+
+      <div class="row">
+        <span class="label">Notes from</span>
+        <div class="segmented" role="radiogroup" aria-label="Note source">
+          <button type="button" role="radio" aria-checked="true">Audio</button>
+          <button type="button" role="radio" aria-checked="false" disabled title="Coming in phase 2">Score (MusicXML) · soon</button>
+        </div>
+      </div>
+
+      <details class="alt-playback">
+        <summary>Listen to a different file (e.g. full mix)</summary>
+        <p class="muted">Notes still come from the part track above; this only changes what you hear.
+          The two files must line up in time.</p>
+        <div class="row">
+          <label class="btn file-btn">
+            <input type="file" id="altInput" accept="audio/*,.mp3" hidden>
+            Choose playback file…
+          </label>
+          <span id="altName" class="muted grow">Playing the part track</span>
+          <button type="button" class="btn" id="altClear" hidden>Use part track</button>
+        </div>
+      </details>
+
+      <div class="progress" id="progress" hidden>
+        <div class="bar"><div class="fill" id="progressFill"></div></div>
+        <span id="progressText" class="muted"></span>
+      </div>
+      <div id="status" class="status muted" aria-live="polite"></div>
+    </section>
+
+    <!-- The big display -->
+    <section class="stage" aria-live="off">
+      <div class="now">
+        <div id="currentNote" class="current-note rest">—</div>
+        <div class="life"><div id="noteLife" class="life-fill"></div></div>
+      </div>
+      <div class="next">
+        <span class="next-label">next</span>
+        <span id="nextNote" class="next-note">—</span>
+        <span id="nextIn" class="next-in"></span>
+      </div>
+    </section>
+
+    <canvas id="roll" class="roll" aria-label="Piano roll. Click to seek."></canvas>
+    <!-- Colours match DIAG_COLORS in src/pianoRoll.js -->
+    <div id="diagLegend" class="diag-legend" hidden>
+      <span><i style="background:#ff9f43"></i>Low confidence → lower <b>Pitch confidence</b></span>
+      <span><i style="background:#b07cff"></i>Background → raise <b>Background rejection</b> (or 0 = off)</span>
+      <span><i style="background:#7d8796"></i>Too quiet → raise <b>Volume gate</b></span>
+      <span><i style="background:#ff4d4d"></i>Out of range → widen <b>Lowest/Highest note</b></span>
+      <span><i style="background:#2ee6c5"></i>Too patchy → lower <b>Smoothing</b></span>
+      <span><i style="background:#ff7eb6"></i>Too short → lower <b>Min note length</b></span>
+    </div>
+
+    <!-- Transport -->
+    <section class="transport">
+      <button type="button" id="playBtn" class="play" disabled aria-label="Play">
+        <svg viewBox="0 0 24 24" class="icon-play"><path d="M8 5v14l11-7z"/></svg>
+        <svg viewBox="0 0 24 24" class="icon-pause"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+      </button>
+      <span id="timeNow" class="time">0:00</span>
+      <input type="range" id="seek" min="0" max="0" step="0.01" value="0" disabled aria-label="Seek">
+      <span id="timeTotal" class="time">0:00</span>
+    </section>
+
+    <!-- Sing along: your pitch from the mic, compared with the song -->
+    <section class="card sing">
+      <div class="row">
+        <button type="button" class="btn primary" id="singBtn">🎤 Sing along</button>
+        <label class="check"><input type="checkbox" id="anyOctave"> Any octave counts</label>
+        <button type="button" class="btn" id="singReset" hidden>Reset score</button>
+        <span id="singHint" class="muted grow">Wear headphones, so the mic hears only you, not the track.</span>
+      </div>
+      <div class="sing-stats" id="singStats" hidden>
+        <div><span class="k">You</span><span id="singYou" class="v">—</span><span id="singCents" class="muted"></span></div>
+        <div><span class="k">Score so far</span><span id="singSoFar" class="v">—</span></div>
+        <div><span class="k">Whole song</span><span id="singWhole" class="v">—</span><span id="singCovered" class="muted"></span></div>
+      </div>
+    </section>
+
+    <section class="toggles">
+      <div class="segmented" role="radiogroup" aria-label="Accidentals">
+        <button type="button" role="radio" id="flatsBtn">♭ flats</button>
+        <button type="button" role="radio" id="sharpsBtn">♯ sharps</button>
+      </div>
+      <label class="check"><input type="checkbox" id="octaveToggle"> Octave numbers</label>
+      <label class="check"><input type="checkbox" id="rollLabelsToggle"> Note names in strip</label>
+      <label class="check"><input type="checkbox" id="staffToggle"> Staff view</label>
+      <label class="check" id="paperToggleWrap" hidden><input type="checkbox" id="paperToggle"> White paper</label>
+      <label class="check">Strip shows
+        <select id="rollWindow">
+          <option value="4">4 s</option>
+          <option value="8" selected>8 s</option>
+          <option value="12">12 s</option>
+          <option value="16">16 s</option>
+        </select>
+      </label>
+      <label class="check">Speed
+        <select id="rate">
+          <option value="0.5">50%</option>
+          <option value="0.75">75%</option>
+          <option value="0.9">90%</option>
+          <option value="1" selected>100%</option>
+        </select>
+      </label>
+    </section>
+
+    <details class="card tuning" id="tuning">
+      <summary>Tuning</summary>
+      <p class="muted">Adjust these if notes flicker, go missing or come out wrong.
+        Changes re-run the analysis automatically; the range settings take a few seconds.</p>
+      <div id="tuningControls" class="tuning-grid"></div>
+      <div class="row">
+        <button type="button" class="btn primary" id="favoriteTuning">★ My favourite</button>
+        <button type="button" class="btn" id="reanalyze">Re-analyze</button>
+        <button type="button" class="btn" id="resetTuning">Reset to defaults</button>
+      </div>
+    </details>
+
+    <p class="footer muted">Space = play/pause · ←/→ = 5 s · click the strip to seek</p>
+  </main>
+
+  <div id="dropOverlay" class="drop-overlay" hidden>Drop your part track</div>
+
+  <!-- Plain scripts (not ES modules) so the app works when opened straight
+       from disk. Order matters: each file uses names defined above it. -->
+  <script src="src/notes.js"></script>
+  <script src="src/timeline.js"></script>
+  <script src="src/analysis/mpm.js"></script>
+  <script src="src/analysis/frameAnalysis.js"></script>
+  <script src="src/analysis/postprocess.js"></script>
+  <script src="src/sources/audioSource.js"></script>
+  <script src="src/sources/musicxmlSource.js"></script>
+  <script src="src/settings.js"></script>
+  <script src="src/player.js"></script>
+  <script src="src/display.js"></script>
+  <script src="src/pianoRoll.js"></script>
+  <script src="src/mic.js"></script>
+  <script src="src/singScore.js"></script>
+  <script src="src/main.js"></script>
+</body>
+</html>

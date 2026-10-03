@@ -1,0 +1,9 @@
+{
+  "name": "choir-practice",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Browser-based choir practice: shows the note to sing as a part track plays.",
+  "scripts": {
+    "test": "node tests/synthetic.test.mjs"
+  }
+}
