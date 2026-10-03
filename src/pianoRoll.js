@@ -286,7 +286,7 @@ class PianoRoll {
       ctx.fillStyle = color;
       ctx.beginPath(); ctx.arc(x, y, 4.5, 0, 2 * Math.PI); ctx.fill();
 
-      const label = noteLabel({ midi: Math.round(head.m) }, { ...fmt, octave: true });
+      const label = noteLabel({ midi: head.note ?? Math.round(head.m) }, { ...fmt, octave: true });
       ctx.font = '700 15px system-ui, sans-serif';
       ctx.textBaseline = 'middle';
       const tw = ctx.measureText(label).width;

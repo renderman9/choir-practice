@@ -213,11 +213,12 @@ function updateSinging(t, f) {
     const keepFrom = ts - roll.windowSec;
     while (sing.trail.length && sing.trail[0].t < keepFrom) sing.trail.shift();
   }
-  roll.singer = { trail: sing.trail, head: { t: ts, m, state: res.state } };
+  const note = mic.stableNote(); // note name with anti-flicker stickiness
+  roll.singer = { trail: sing.trail, head: { t: ts, m, note, state: res.state } };
   roll.invalidate(); // redraw even while paused, so the tip follows your voice
 
   // "You" readout: the note you're singing, and how far off the song's note.
-  const you = m == null ? '—' : noteLabel({ midi: Math.round(m) }, { ...f, octave: true });
+  const you = note == null ? '—' : noteLabel({ midi: note }, { ...f, octave: true });
   const cents = m == null || res.cents == null ? '' : res.cents === 0 ? 'on the note'
     : `${res.cents > 0 ? '+' : ''}${res.cents}¢ ${res.cents > 0 ? 'sharp' : 'flat'}`;
   const cls = m == null ? '' : ['', 'sing-miss', 'sing-green', 'sing-gold'][res.state];

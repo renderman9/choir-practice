@@ -91,7 +91,7 @@ const TUNING_DEFS = [
   },
   {
     key: 'micLatencyMs', label: 'Sing along: mic delay', stage: 'display',
-    min: 0, max: 500, step: 10, def: 120, fmt: (v) => `${v} ms`,
+    min: 0, max: 500, step: 10, def: 150, fmt: (v) => `${v} ms`,
     help: 'Your voice reaches the app a little after you sing (mic, processing, and hearing the '
       + 'track late). This shifts your line back to make up for it. If your line always changes '
       + 'note just after the song does, raise it; Bluetooth headphones may need 250–400 ms.',

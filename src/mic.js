@@ -19,8 +19,12 @@ const MIC_SILENCE_DB = -50;
 /** Minimum MPM clarity for a reading to count as singing. A solo voice
  *  close to the mic is very clean, so this can be stricter than for tracks. */
 const MIC_MIN_CLARITY = 0.7;
-/** Readings in the median (at ~60 fps, 5 ≈ 80 ms). */
-const MIC_MEDIAN = 5;
+/** Readings in the median (at ~60 fps, 9 ≈ 150 ms). Long enough to calm
+ *  vibrato and stray readings, short enough to follow note changes. */
+const MIC_MEDIAN = 9;
+/** Extra semitones (beyond ½) the pitch must move before the reported note
+ *  name changes. Stops the label flickering between neighbours. */
+const MIC_NOTE_STICKINESS = 0.2;
 
 class MicPitch {
   constructor() {
@@ -28,7 +32,15 @@ class MicPitch {
     this._ctx = null;
     this._stream = null;
     this._analyser = null;
-    this._recent = [];
+    this._resetSmoothing();
+  }
+
+  /** Forget recent readings (start, stop, range change). */
+  _resetSmoothing() {
+    this._recent = [];   // last few raw readings, for the median
+    this._out = null;    // last smoothed pitch
+    this._note = null;   // last reported note name (with stickiness)
+    this._folds = [];    // which recent readings were octave-folded
   }
 
   /**
@@ -37,11 +49,12 @@ class MicPitch {
    */
   async start(range) {
     if (this.active) return;
-    // Browser voice processing is tuned for speech and fights sustained sung
-    // notes, so turn it off, except echo cancellation, which helps a little
-    // if you're not wearing headphones.
+    // Turn OFF all browser voice processing. It's tuned for phone calls:
+    // echo cancellation in particular filters and ducks the mic whenever the
+    // page is playing audio, which wrecks pitch tracking the moment the track
+    // starts. Headphones are the echo cancellation instead.
     this._stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: false },
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
     });
     const Ctx = window.AudioContext || window.webkitAudioContext;
     this._ctx = new Ctx();
@@ -57,7 +70,7 @@ class MicPitch {
     this._stream?.getTracks().forEach((t) => t.stop());
     this._ctx?.close().catch(() => {});
     this._stream = this._ctx = this._analyser = null;
-    this._recent = [];
+    this._resetSmoothing();
   }
 
   /** (Re)build the detector for a singing range. */
@@ -78,7 +91,7 @@ class MicPitch {
     this._raw = new Float32Array(this._analyser.fftSize);
     this._down = new Float32Array(this._window);
     this._detect = createMpmDetector({ sampleRate: this._rate, windowSize: this._window, minFreq, maxFreq });
-    this._recent = [];
+    this._resetSmoothing();
   }
 
   /**
@@ -107,11 +120,54 @@ class MicPitch {
       if (r.freq > 0 && r.clarity >= MIC_MIN_CLARITY) midi = 69 + 12 * Math.log2(r.freq / 440);
     }
 
+    // Octave-jump fix: pitch detectors sometimes report a voice one octave
+    // up or down for a reading or two (a strong overtone or a weak
+    // fundamental). If a reading sits about an octave from where you've just
+    // been singing, fold it back, unless it stays there for ~200 ms, in which
+    // case you really did leap an octave.
+    const ref = this._out;
+    let folded = false;
+    if (midi === midi && ref != null) {
+      for (const k of [-12, 12]) {
+        if (Math.abs(midi - ref + k) < 1) { midi += k; folded = true; break; }
+      }
+    }
+    // Folded in most of the last 16 readings (~270 ms)? Then it's consistently
+    // an octave away: accept it. Undo the fold and restart the median so the
+    // line jumps to the new octave. (A sliding count, so the odd glitchy
+    // reading during the leap doesn't reset it.)
+    this._folds.push(folded);
+    if (this._folds.length > 16) this._folds.shift();
+    if (this._folds.filter(Boolean).length >= 10) {
+      midi = 69 + 12 * Math.log2(this._detect(this._down, 0).freq / 440);
+      this._recent = [];
+      this._out = null;
+      this._folds = [];
+    }
+
     // Median of the last few readings; silent unless most of them are sung.
     this._recent.push(midi);
     if (this._recent.length > MIC_MEDIAN) this._recent.shift();
     const sung = this._recent.filter((v) => v === v).sort((a, b) => a - b);
-    if (sung.length * 2 <= this._recent.length) return null;
-    return sung[sung.length >> 1];
+    if (sung.length * 2 <= this._recent.length) {
+      this._out = null;
+      this._note = null;
+      return null;
+    }
+    this._out = sung[sung.length >> 1];
+    return this._out;
+  }
+
+  /**
+   * The note name to show for the current pitch (integer MIDI), with
+   * stickiness so it doesn't flicker between neighbouring notes. Call after
+   * read().
+   */
+  stableNote() {
+    if (this._out == null) return null;
+    if (this._note == null || Math.abs(this._out - this._note) > 0.5 + MIC_NOTE_STICKINESS) {
+      this._note = Math.round(this._out);
+    }
+    return this._note;
   }
 }
